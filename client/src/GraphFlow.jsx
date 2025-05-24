@@ -31,26 +31,28 @@ const nodes = [
   { id: 'x16', data: { label: 'x16' }, position: { x: 750, y: 280 }, style: nodeStyle },
 ];
 
+const edgeStyle = { stroke: '#000', strokeWidth: 2 };
+
 const edges = [
-  { id: 'e1', source: 'x1', target: 'x2', label: '10', markerEnd: { type: 'arrow' } },
-  { id: 'e2', source: 'x2', target: 'x3', label: '15', markerEnd: { type: 'arrow' } },
-  { id: 'e3', source: 'x2', target: 'x4', label: '8', markerEnd: { type: 'arrow' } },
-  { id: 'e4', source: 'x3', target: 'x6', label: '1', markerEnd: { type: 'arrow' } },
-  { id: 'e5', source: 'x4', target: 'x5', label: '6', markerEnd: { type: 'arrow' } },
-  { id: 'e6', source: 'x4', target: 'x6', label: '5', markerEnd: { type: 'arrow' } },
-  { id: 'e7', source: 'x5', target: 'x9', label: '1', markerEnd: { type: 'arrow' } },
-  { id: 'e8', source: 'x6', target: 'x7', label: '4', markerEnd: { type: 'arrow' } },
-  { id: 'e9', source: 'x7', target: 'x8', label: '1', markerEnd: { type: 'arrow' } },
-  { id: 'e10', source: 'x8', target: 'x9', label: '3', markerEnd: { type: 'arrow' } },
-  { id: 'e11', source: 'x8', target: 'x12', label: '7', markerEnd: { type: 'arrow' } },
-  { id: 'e12', source: 'x9', target: 'x10', label: '6', markerEnd: { type: 'arrow' } },
-  { id: 'e13', source: 'x10', target: 'x12', label: '7', markerEnd: { type: 'arrow' } },
-  { id: 'e14', source: 'x7', target: 'x11', label: '8', markerEnd: { type: 'arrow' } },
-  { id: 'e15', source: 'x11', target: 'x13', label: '2', markerEnd: { type: 'arrow' } },
-  { id: 'e16', source: 'x12', target: 'x15', label: '9', markerEnd: { type: 'arrow' } },
-  { id: 'e17', source: 'x13', target: 'x14', label: '4', markerEnd: { type: 'arrow' } },
-  { id: 'e18', source: 'x14', target: 'x15', label: '5', markerEnd: { type: 'arrow' } },
-  { id: 'e19', source: 'x15', target: 'x16', label: '6', markerEnd: { type: 'arrow' } },
+  { id: 'e1', source: 'x1', target: 'x2', label: '10', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e2', source: 'x2', target: 'x3', label: '15', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e3', source: 'x2', target: 'x4', label: '8', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e4', source: 'x3', target: 'x6', label: '1', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e5', source: 'x4', target: 'x5', label: '6', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e6', source: 'x4', target: 'x6', label: '5', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e7', source: 'x5', target: 'x9', label: '1', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e8', source: 'x6', target: 'x7', label: '4', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e9', source: 'x7', target: 'x8', label: '1', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e10', source: 'x8', target: 'x9', label: '3', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e11', source: 'x8', target: 'x12', label: '7', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e12', source: 'x9', target: 'x10', label: '6', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e13', source: 'x10', target: 'x12', label: '7', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e14', source: 'x7', target: 'x11', label: '8', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e15', source: 'x11', target: 'x13', label: '2', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e16', source: 'x12', target: 'x15', label: '9', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e17', source: 'x13', target: 'x14', label: '4', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e18', source: 'x14', target: 'x15', label: '5', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
+  { id: 'e19', source: 'x15', target: 'x16', label: '6', style: edgeStyle, markerEnd: { type: 'arrowclosed' } },
 ];
 
 const DantzigGraphExact = () => {
