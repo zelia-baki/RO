@@ -9,8 +9,8 @@ import {
   ChartBarIcon,
   MapIcon
 } from '@heroicons/react/24/solid';
-import DynamicGraphViewer from './DynamicGraphViewer';
-import ResultsPanel from './ResultsPanel';
+// import DynamicGraphViewer from './DynamicGraphViewer';
+// import ResultsPanel from './ResultsPanel';
 
 const DantzigApp = () => {
   const [graphData, setGraphData] = useState({ nodes: [], edges: [] });
