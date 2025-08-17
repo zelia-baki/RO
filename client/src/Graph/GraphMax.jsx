@@ -1,7 +1,7 @@
 // src/Graph/GraphAppMaximale.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Network } from 'vis-network';
+import cytoscape from 'cytoscape';
 import NavBar from '../Home/NavBar';
 
 export default function GraphAppMaximale() {
@@ -15,7 +15,7 @@ export default function GraphAppMaximale() {
   const [path, setPath] = useState([]);
   const [error, setError] = useState('');
 
-  const networkRef = useRef(null);
+  const cyRef = useRef(null);
   const containerRef = useRef();
 
   // ====== Gestion des sommets ======
@@ -95,58 +95,90 @@ export default function GraphAppMaximale() {
     }
   };
 
-  // ====== Dessin du graphe ======
+  // ====== Dessin du graphe avec Cytoscape ======
   const drawGraph = (highlightPath = []) => {
-    const data = {
-      nodes: nodes.map(n => ({
-        id: n.id,
-        label: n.id,
-        color: highlightPath.includes(n.id) ? '#fffbeb' : '#ffffff',
-        font: { color: highlightPath.includes(n.id) ? '#78350f' : '#334155' },
-        borderWidth: highlightPath.includes(n.id) ? 3 : 1,
+    const elements = [
+      ...nodes.map(n => ({
+        data: { id: n.id, label: n.id },
+        classes: highlightPath.includes(n.id) ? 'highlight-node' : ''
       })),
-      edges: edges.map(e => {
+      ...edges.map(e => {
         const inPath =
           highlightPath.includes(e.source) &&
           highlightPath.includes(e.target) &&
           highlightPath.indexOf(e.source) + 1 === highlightPath.indexOf(e.target);
 
         return {
-          from: e.source,
-          to: e.target,
-          label: e.label,
-          arrows: 'to',
-          color: inPath ? { color: '#d97706', highlight: '#b45309' } : '#94a3b8',
-          font: { color: inPath ? '#d97706' : '#475569' },
-          width: inPath ? 3 : 1.5,
-          smooth: { enabled: true, type: 'cubicBezier' },
+          data: {
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            label: e.label
+          },
+          classes: inPath ? 'highlight-edge' : ''
         };
-      }),
-    };
+      })
+    ];
 
-    const options = {
-      nodes: {
-        shape: 'circle',
-        size: 28,
-        font: { size: 14, face: 'Inter, sans-serif' },
-        borderWidth: 1,
-        color: {
-          border: '#cbd5e1',
-          background: '#ffffff',
-          highlight: { border: '#d97706', background: '#fffbeb' },
+    if (cyRef.current) {
+      cyRef.current.destroy();
+    }
+
+    cyRef.current = cytoscape({
+      container: containerRef.current,
+      elements,
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'background-color': '#ffffff',
+            'border-width': 1,
+            'border-color': '#cbd5e1',
+            'label': 'data(label)',
+            'font-size': '14px',
+            'text-valign': 'center',
+            'color': '#334155',
+            'width': 28,
+            'height': 28
+          }
         },
-      },
-      edges: {
-        font: { align: 'middle' },
-        smooth: true,
-        arrows: { to: { enabled: true, scaleFactor: 1 } },
-      },
-      physics: { enabled: true, stabilization: { iterations: 200 } },
-      interaction: { hover: true, tooltipDelay: 200 },
-    };
-
-    if (networkRef.current) networkRef.current.destroy();
-    networkRef.current = new Network(containerRef.current, data, options);
+        {
+          selector: 'edge',
+          style: {
+            'curve-style': 'bezier',
+            'target-arrow-shape': 'triangle',
+            'target-arrow-color': '#94a3b8',
+            'line-color': '#94a3b8',
+            'width': 1.5,
+            'label': 'data(label)',
+            'font-size': '12px',
+            'color': '#475569',
+            'text-background-color': '#ffffff',
+            'text-background-opacity': 1,
+            'text-background-padding': 2
+          }
+        },
+        {
+          selector: '.highlight-node',
+          style: {
+            'background-color': '#fffbeb',
+            'border-color': '#d97706',
+            'border-width': 3,
+            'color': '#78350f'
+          }
+        },
+        {
+          selector: '.highlight-edge',
+          style: {
+            'line-color': '#d97706',
+            'target-arrow-color': '#b45309',
+            'width': 3,
+            'color': '#d97706'
+          }
+        }
+      ],
+      layout: { name: 'cose', animate: true }
+    });
   };
 
   // 🔹 Mise à jour auto du graphe dès qu'un sommet ou un arc change
@@ -156,7 +188,7 @@ export default function GraphAppMaximale() {
 
   useEffect(() => {
     return () => {
-      if (networkRef.current) networkRef.current.destroy();
+      if (cyRef.current) cyRef.current.destroy();
     };
   }, []);
 

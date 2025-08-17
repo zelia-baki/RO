@@ -7,21 +7,17 @@ import GraphApp from './Graph/GraphApp';
 import GraphAppMaximale from './Graph/GraphMax';
 import GraphAppMinimale from './Graph/GraphMin';
 import TestTailwind from './TestTailwind';
+import PetriRunway from './PetriRunway'; // 🔹 ajout
 
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<HomePage />} />
-
-        {/* Pages spécifiques */}
-        {/* <Route path="/minimale" element={<GraphApp />} /> */}
         <Route path="/minimale" element={<GraphAppMinimale />} />
         <Route path="/maximale" element={<GraphAppMaximale />} />
         <Route path="/test" element={<TestTailwind />} />
-
-
-
+        <Route path="/rdp-runway" element={<PetriRunway />} /> {/* 🔹 nouvelle route */}
       </Routes>
     </Router>
   );
