@@ -1,56 +1,100 @@
-import React, { useState, useEffect } from 'react';
+// src/components/DantzigStepByStep.jsx
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+function parseArcString(s) {
+  // "(A, B)" => { from_node: "A", to_node: "B" }
+  const m = typeof s === 'string' ? s.match(/\(\s*([^,\s]+)\s*,\s*([^)\s]+)\s*\)/) : null;
+  return m ? { from_node: m[1], to_node: m[2] } : null;
+}
+
+function normalizeStep(rawStep = {}) {
+  const lambda = rawStep.lambda_values ?? rawStep.lambda ?? {};
+  const E = rawStep.E_current ?? rawStep.E ?? [];
+  // candidats (min = objets, max = strings "(u, v)")
+  let candidates = rawStep.candidates ?? [];
+  if (candidates.length && typeof candidates[0] === 'string') {
+    candidates = candidates.map(s => {
+      const arc = parseArcString(s);
+      return arc ? { from_node: arc.from_node, to_node: arc.to_node, edge_cost: undefined, calculation: undefined, total_cost: undefined } : s;
+    });
+  }
+  // sélection
+  let selected = rawStep.selected ?? null;
+  if (!selected && Array.isArray(rawStep.selected_arcs) && rawStep.selected_arcs.length) {
+    const arc = parseArcString(rawStep.selected_arcs[0]);
+    if (arc) selected = { from_node: arc.from_node, to_node: arc.to_node, total_cost: undefined, calculation: undefined };
+  }
+
+  const highlight_edges = rawStep.highlight_edges ?? rawStep.selected_arcs ?? [];
+  const title = rawStep.step_name ?? rawStep.title ?? `Étape ${rawStep.step ?? ''}`;
+  const description = rawStep.description ?? '';
+  const action = rawStep.action ?? '';
+
+  return {
+    title, description, action,
+    lambda, E,
+    candidates, selected,
+    highlight_edges,
+    // garder les originaux aussi
+    _raw: rawStep
+  };
+}
+
 const DantzigStepByStep = ({ stepsData, onStepChange }) => {
+  // steps peut être stepsData.steps (max) ou stepsData.detailed_steps (min)
+  const steps = useMemo(
+    () => (stepsData?.steps ?? stepsData?.detailed_steps ?? []),
+    [stepsData]
+  );
+
   const [currentStep, setCurrentStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Auto-play functionality
+  // reset quand on change de dataset
   useEffect(() => {
-    let interval;
-    if (isPlaying && currentStep < stepsData.detailed_steps.length - 1) {
-      interval = setInterval(() => {
-        setCurrentStep(prev => {
-          const next = prev + 1;
-          if (next >= stepsData.detailed_steps.length - 1) {
-            setIsPlaying(false);
-          }
-          return next;
-        });
-      }, 2000);
-    }
-    return () => clearInterval(interval);
-  }, [isPlaying, currentStep, stepsData.detailed_steps.length]);
+    setCurrentStep(0);
+    setIsPlaying(false);
+  }, [stepsData]);
 
-  // Notify parent of step changes
+  // autoplay
   useEffect(() => {
-    if (onStepChange && stepsData.detailed_steps[currentStep]) {
-      onStepChange(stepsData.detailed_steps[currentStep]);
-    }
-  }, [currentStep, onStepChange, stepsData.detailed_steps]);
+    if (!isPlaying || steps.length === 0) return;
+    const last = steps.length - 1;
+    const id = setInterval(() => {
+      setCurrentStep(prev => {
+        const next = Math.min(prev + 1, last);
+        if (next === last) {
+          // stop en fin
+          setIsPlaying(false);
+        }
+        return next;
+      });
+    }, 2000);
+    return () => clearInterval(id);
+  }, [isPlaying, steps.length]);
 
-  if (!stepsData || !stepsData.detailed_steps) {
+  // notify parent
+  useEffect(() => {
+    if (!steps.length) return;
+    const raw = steps[currentStep];
+    if (!raw) return;
+    const norm = normalizeStep(raw);
+    // on envoie la version enrichie (contient les champs originaux + normés sous _norm)
+    onStepChange?.({ ...raw, _norm: norm });
+  }, [currentStep, steps, onStepChange]);
+
+  if (!stepsData || steps.length === 0) {
     return null;
   }
 
-  const step = stepsData.detailed_steps[currentStep];
-  const totalSteps = stepsData.detailed_steps.length;
+  const raw = steps[currentStep];
+  const step = normalizeStep(raw);
+  const totalSteps = steps.length;
 
-  const nextStep = () => {
-    if (currentStep < totalSteps - 1) {
-      setCurrentStep(currentStep + 1);
-    }
-  };
-
-  const prevStep = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
-    }
-  };
-
-  const togglePlay = () => {
-    setIsPlaying(!isPlaying);
-  };
+  const nextStep = () => setCurrentStep(s => Math.min(s + 1, totalSteps - 1));
+  const prevStep = () => setCurrentStep(s => Math.max(s - 1, 0));
+  const togglePlay = () => setIsPlaying(p => !p);
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-6">
@@ -58,45 +102,34 @@ const DantzigStepByStep = ({ stepsData, onStepChange }) => {
         <h2 className="text-2xl font-bold text-gray-800">
           Algorithme de Dantzig - Étapes détaillées
         </h2>
-        
-        {/* Contrôles de navigation */}
+
         <div className="flex items-center gap-3">
-          <button
-            onClick={prevStep}
-            disabled={currentStep === 0}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-600 transition-colors"
-          >
+          <button onClick={prevStep} disabled={currentStep === 0}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-600 transition-colors">
             ← Précédent
           </button>
-          
-          <button
-            onClick={togglePlay}
-            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
-          >
+          <button onClick={togglePlay}
+            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
             {isPlaying ? '⏸️ Pause' : '▶️ Jouer'}
           </button>
-          
-          <button
-            onClick={nextStep}
-            disabled={currentStep === totalSteps - 1}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-600 transition-colors"
-          >
+          <button onClick={nextStep} disabled={currentStep === totalSteps - 1}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-600 transition-colors">
             Suivant →
           </button>
-          
           <span className="text-sm text-gray-600 ml-2">
             {currentStep + 1} / {totalSteps}
           </span>
         </div>
       </div>
 
-      {/* Barre de progression */}
+      {/* Progress */}
       <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
         <motion.div
-          className="bg-blue-500 h-2 rounded-full"
+          className="h-2 rounded-full"
           initial={{ width: 0 }}
           animate={{ width: `${((currentStep + 1) / totalSteps) * 100}%` }}
           transition={{ duration: 0.3 }}
+          style={{ backgroundColor: '#3b82f6' }}
         />
       </div>
 
@@ -109,53 +142,38 @@ const DantzigStepByStep = ({ stepsData, onStepChange }) => {
           transition={{ duration: 0.3 }}
           className="space-y-6"
         >
-          {/* En-tête de l'étape */}
+          {/* Header */}
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border-l-4 border-blue-500">
             <h3 className="text-lg font-semibold text-blue-800">
-              {step.step_name || `Étape ${step.step}`}: {step.action}
+              {step.title}{step.action ? `: ${step.action}` : ''}
             </h3>
-            <p className="text-blue-700 mt-1">{step.description}</p>
+            {step.description && <p className="text-blue-700 mt-1">{step.description}</p>}
           </div>
 
-          {/* État actuel */}
           <div className="grid md:grid-cols-2 gap-6">
-            {/* Ensemble E */}
-            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-              <h4 className="font-semibold text-green-800 mb-2">
-                Ensemble marqué E{step.step}
-              </h4>
-              <div className="flex flex-wrap gap-2">
-                {step.E_current.map((node, index) => (
-                  <motion.span
-                    key={node}
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ delay: index * 0.1 }}
-                    className="px-3 py-1 bg-green-200 text-green-800 rounded-full text-sm font-medium"
-                  >
-                    {node}
-                  </motion.span>
-                ))}
+            {/* E (si dispo) */}
+            {Array.isArray(step.E) && step.E.length > 0 && (
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                <h4 className="font-semibold text-green-800 mb-2">Ensemble marqué</h4>
+                <div className="flex flex-wrap gap-2">
+                  {step.E.map((node, index) => (
+                    <motion.span key={node} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: index * 0.05 }}
+                      className="px-3 py-1 bg-green-200 text-green-800 rounded-full text-sm font-medium">
+                      {node}
+                    </motion.span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Valeurs λ */}
+            {/* Lambda */}
             <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-              <h4 className="font-semibold text-purple-800 mb-2">
-                Valeurs λ(x)
-              </h4>
+              <h4 className="font-semibold text-purple-800 mb-2">Valeurs λ(x)</h4>
               <div className="grid grid-cols-2 gap-2">
-                {Object.entries(step.lambda_values).map(([node, value]) => (
-                  <motion.div
-                    key={node}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="flex justify-between text-sm"
-                  >
+                {Object.entries(step.lambda).map(([node, value]) => (
+                  <motion.div key={node} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-between text-sm">
                     <span className="font-medium">λ({node}):</span>
-                    <span className={`font-bold ${
-                      value === '∞' ? 'text-gray-500' : 'text-purple-700'
-                    }`}>
+                    <span className={`font-bold ${value === '∞' || value === '-∞' ? 'text-gray-500' : 'text-purple-700'}`}>
                       {value}
                     </span>
                   </motion.div>
@@ -164,72 +182,57 @@ const DantzigStepByStep = ({ stepsData, onStepChange }) => {
             </div>
           </div>
 
-          {/* Candidats et calculs */}
+          {/* Candidats (si dispo) */}
           {step.candidates && step.candidates.length > 0 && (
             <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-              <h4 className="font-semibold text-yellow-800 mb-3">
-                Calculs des candidats
-              </h4>
+              <h4 className="font-semibold text-yellow-800 mb-3">Calculs des candidats</h4>
               <div className="space-y-3">
-                {step.candidates.map((candidate, index) => (
+                {step.candidates.map((c, index) => (
                   <motion.div
-                    key={index}
+                    key={`${c.from_node}-${c.to_node}-${index}`}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.1 }}
+                    transition={{ delay: index * 0.05 }}
                     className={`p-3 rounded-lg border-2 transition-all ${
-                      step.selected && 
-                      candidate.from_node === step.selected.from_node && 
-                      candidate.to_node === step.selected.to_node
+                      step.selected &&
+                      c.from_node === step.selected.from_node &&
+                      c.to_node === step.selected.to_node
                         ? 'bg-green-100 border-green-400 shadow-md'
                         : 'bg-white border-yellow-300'
                     }`}
                   >
                     <div className="flex justify-between items-center">
-                      <span className="font-medium">
-                        Arc ({candidate.from_node}, {candidate.to_node})
-                      </span>
-                      <span className="text-sm text-gray-600">
-                        Coût: {candidate.edge_cost}
-                      </span>
+                      <span className="font-medium">Arc ({c.from_node}, {c.to_node})</span>
+                      {'edge_cost' in c && c.edge_cost !== undefined && (
+                        <span className="text-sm text-gray-600">Coût: {c.edge_cost}</span>
+                      )}
                     </div>
-                    <div className="text-sm mt-1 text-gray-700">
-                      {candidate.calculation}
-                    </div>
-                    <div className="text-lg font-bold text-right mt-1">
-                      = {candidate.total_cost}
-                    </div>
+                    {c.calculation && <div className="text-sm mt-1 text-gray-700">{c.calculation}</div>}
+                    {'total_cost' in c && c.total_cost !== undefined && (
+                      <div className="text-lg font-bold text-right mt-1">= {c.total_cost}</div>
+                    )}
                   </motion.div>
                 ))}
               </div>
-
-              {step.reasoning && (
-                <div className="mt-3 p-3 bg-blue-100 rounded-lg">
-                  <p className="text-blue-800 font-medium">
-                    🎯 Sélection: {step.reasoning}
-                  </p>
-                </div>
-              )}
             </div>
           )}
 
-          {/* Arc sélectionné */}
+          {/* Arc sélectionné (si dispo) */}
           {step.selected && (
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="bg-gradient-to-r from-green-100 to-emerald-100 p-4 rounded-lg border-2 border-green-400"
-            >
-              <h4 className="font-semibold text-green-800 mb-2">
-                ✅ Arc sélectionné
-              </h4>
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+              className="bg-gradient-to-r from-green-100 to-emerald-100 p-4 rounded-lg border-2 border-green-400">
+              <h4 className="font-semibold text-green-800 mb-2">✅ Arc sélectionné</h4>
               <div className="text-green-700">
                 <p><strong>De:</strong> {step.selected.from_node}</p>
                 <p><strong>Vers:</strong> {step.selected.to_node}</p>
-                <p><strong>Coût total:</strong> {step.selected.total_cost}</p>
-                <p className="text-sm mt-2 font-mono bg-green-50 p-2 rounded">
-                  λ({step.selected.to_node}) = {step.selected.calculation}
-                </p>
+                {'total_cost' in step.selected && step.selected.total_cost !== undefined && (
+                  <p><strong>Coût total:</strong> {step.selected.total_cost}</p>
+                )}
+                {'calculation' in step.selected && step.selected.calculation && (
+                  <p className="text-sm mt-2 font-mono bg-green-50 p-2 rounded">
+                    λ({step.selected.to_node}) = {step.selected.calculation}
+                  </p>
+                )}
               </div>
             </motion.div>
           )}
@@ -237,18 +240,11 @@ const DantzigStepByStep = ({ stepsData, onStepChange }) => {
       </AnimatePresence>
 
       {/* Résumé final */}
-      {currentStep === totalSteps - 1 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="mt-6 p-4 bg-gradient-to-r from-indigo-100 to-purple-100 rounded-lg border border-indigo-300"
-        >
-          <h4 className="font-semibold text-indigo-800 mb-4">
-            🏁 Algorithme terminé !
-          </h4>
+      {currentStep === totalSteps - 1 && stepsData?.final_lambda && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+          className="mt-6 p-4 bg-gradient-to-r from-indigo-100 to-purple-100 rounded-lg border border-indigo-300">
+          <h4 className="font-semibold text-indigo-800 mb-4">🏁 Algorithme terminé !</h4>
           <div className="grid md:grid-cols-2 gap-6">
-            {/* Distances finales */}
             <div>
               <h5 className="font-medium text-indigo-700 mb-2">Distances finales (λ):</h5>
               <div className="space-y-1">
@@ -259,28 +255,29 @@ const DantzigStepByStep = ({ stepsData, onStepChange }) => {
                 ))}
               </div>
             </div>
-            
-            {/* Chemin minimal principal */}
             <div>
-              <h5 className="font-medium text-indigo-700 mb-2">Chemin minimal principal:</h5>
+              <h5 className="font-medium text-indigo-700 mb-2">
+                {stepsData.main_path ? 'Chemin principal:' : 'Chemin:'}
+              </h5>
               {stepsData.main_path && (
                 <div className="text-sm bg-green-50 p-3 rounded border border-green-200">
                   <strong>{stepsData.main_path.join(' → ')}</strong>
                   <br />
-                  <span className="text-xs text-gray-600">Distance totale: {stepsData.main_path_length}</span>
+                  <span className="text-xs text-gray-600">
+                    Distance totale: {stepsData.main_path_length}
+                  </span>
                 </div>
               )}
             </div>
           </div>
         </motion.div>
       )}
-      
-      {/* Chemin minimal affiché en permanence (comme dans le calcul rapide) */}
-      {stepsData.main_path && (
+
+      {stepsData?.main_path && (
         <div className="mt-6 p-3 bg-green-50 rounded-lg border border-green-200">
-          <strong className="text-green-800">Chemin minimal: </strong>
+          <strong className="text-green-800">Chemin: </strong>
           <span className="font-medium">{stepsData.main_path.join(' → ')}</span>
-          <span className="text-sm text-gray-600 ml-2">(Distance: {stepsData.main_path_length})</span>
+          <span className="text-sm text-gray-600 ml-2">(Valeur: {stepsData.main_path_length})</span>
         </div>
       )}
     </div>

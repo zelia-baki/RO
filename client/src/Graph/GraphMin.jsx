@@ -22,7 +22,40 @@ export default function GraphAppMinimale() {
   const containerRef = useRef();
   const cyRef = useRef(null);
 
-  // Création initiale du graphe
+  // ===== Helpers =====
+  const parseArcString = (s) => {
+    if (!s || typeof s !== 'string') return null;
+    const m = s.match(/\(\s*([^,]+)\s*,\s*([^)]+)\s*\)/);
+    return m ? [m[1].trim(), m[2].trim()] : null;
+  };
+
+  const getStepsArray = (data) => {
+    if (!data) return [];
+    if (Array.isArray(data.steps)) return data.steps;
+    if (Array.isArray(data.detailed_steps)) return data.detailed_steps;
+    return [];
+  };
+
+  const getLambdaFromStep = (step) => step?.lambda ?? step?.lambda_values ?? {};
+
+  const getHighlightFromStep = (step) => {
+    let edgesPairs = [];
+    if (Array.isArray(step?.selected_arcs)) {
+      edgesPairs = step.selected_arcs.map(parseArcString).filter(Boolean);
+    } else if (step?.selected?.from_node && step?.selected?.to_node) {
+      edgesPairs = [[step.selected.from_node, step.selected.to_node]];
+    } else if (Array.isArray(step?.highlight_edges)) {
+      edgesPairs = step.highlight_edges.filter(e => Array.isArray(e) && e.length === 2);
+    }
+    const nodeSet = new Set();
+    edgesPairs.forEach(([u, v]) => { nodeSet.add(u); nodeSet.add(v); });
+    if (Array.isArray(step?.highlight_nodes)) {
+      step.highlight_nodes.forEach(n => nodeSet.add(n));
+    }
+    return { highlightEdges: edgesPairs, highlightNodes: Array.from(nodeSet) };
+  };
+
+  // ===== Création initiale du graphe =====
   useEffect(() => {
     cyRef.current = cytoscape({
       container: containerRef.current,
@@ -55,6 +88,23 @@ export default function GraphAppMinimale() {
             'font-size': 11,
             color: '#475569'
           }
+        },
+        {
+          selector: '.highlight-node',
+          style: {
+            'background-color': '#2563eb',
+            'border-color': '#1e40af',
+            'border-width': 3,
+            color: '#fff'
+          }
+        },
+        {
+          selector: '.highlight-edge',
+          style: {
+            'line-color': '#2563eb',
+            'target-arrow-color': '#2563eb',
+            width: 3
+          }
         }
       ],
       layout: { name: 'cose', animate: true }
@@ -65,10 +115,8 @@ export default function GraphAppMinimale() {
     };
   }, []);
 
-  // Mise à jour du graphe avec chemin minimal et surlignage étape par étape
-  // Mise à jour du graphe pour l'affichage étape par étape
-  // Mise à jour du graphe pour l'affichage étape par étape
-  const updateGraph = (highlightNodes = [], highlightEdges = [], lambdaValues = {}, showPath = false) => {
+  // ===== Rendu générique (sans étapes) =====
+  const updateGraph = (highlightNodes = [], highlightEdges = [], lambdaValues = {}, fitNow = false) => {
     const cy = cyRef.current;
     if (!cy) return;
 
@@ -79,11 +127,11 @@ export default function GraphAppMinimale() {
         node = cy.add({ data: { id: n.id, label: n.id } });
       }
       node.data('label', `${n.id}${lambdaValues[n.id] !== undefined ? `\nλ(${n.id})=${lambdaValues[n.id]}` : ''}`);
-      node.style('background-color', highlightNodes.includes(n.id) ? '#2563eb' : '#94a3b8');
-      node.style('color', highlightNodes.includes(n.id) ? '#fff' : '#111');
+      node.removeClass('highlight-node');
+      if (highlightNodes.includes(n.id)) node.addClass('highlight-node');
     });
 
-    // Suppression des anciens nœuds
+    // Supprimer nœuds obsolètes
     cy.nodes().forEach(node => {
       if (!nodes.some(n => n.id === node.id())) cy.remove(node);
     });
@@ -98,57 +146,27 @@ export default function GraphAppMinimale() {
         edge.data('target', e.target);
         edge.data('label', e.label);
       }
+      edge.removeClass('highlight-edge');
       const isHighlighted = highlightEdges.some(([from, to]) => from === e.source && to === e.target);
-      edge.style({
-        'line-color': highlightEdges.some(([from, to]) => from === e.source && to === e.target) ? '#2563eb' : '#94a3b8',
-        'target-arrow-color': highlightEdges.some(([from, to]) => from === e.source && to === e.target) ? '#2563eb' : '#94a3b8'
-      });
-
+      if (isHighlighted) edge.addClass('highlight-edge');
     });
 
+    // Supprimer arêtes obsolètes
     cy.edges().forEach(edge => {
       if (!edges.some(e => e.id === edge.id())) cy.remove(edge);
     });
 
-    // Centrer & zoomer si demandé
-    if (showPath) cy.fit(50);
+    if (fitNow) cy.fit(50);
   };
 
-  // Changement d'étape
-  // Changement d'étape
-  const handleStepChange = (stepData) => {
-    setCurrentStepData(stepData);
-    const cy = cyRef.current;
-    if (!cy) return;
-
-    const isLastStep = stepsData && stepData.step === stepsData.total_steps - 1;
-
-    let highlightNodes = [];
-    let highlightEdges = [];
-
-    if (isLastStep && stepsData.main_path) {
-      // Dernière étape : tous les nœuds et arcs du chemin minimal
-      highlightNodes = [...stepsData.main_path];
-      highlightEdges = stepsData.main_path
-        .map((v, i, arr) => arr.slice(i, i + 2))
-        .filter(p => p.length === 2); // arcs du chemin
-    } else {
-      // Étapes intermédiaires : seulement le nœud et l'arc courant
-      if (stepData.selected) {
-        highlightNodes = [stepData.selected.from_node, stepData.selected.to_node];
-        highlightEdges = [[stepData.selected.from_node, stepData.selected.to_node]];
-      } else {
-        highlightNodes = stepData.highlight_nodes || [];
-        highlightEdges = stepData.highlight_edges || [];
-      }
-    }
-
-    updateGraph(highlightNodes, highlightEdges, stepData.lambda_values, isLastStep);
+  // ===== Rendu Step-by-Step (même logique que Max) =====
+  const drawGraphWithStepData = (stepData) => {
+    const lambdaObj = getLambdaFromStep(stepData);
+    const { highlightEdges, highlightNodes } = getHighlightFromStep(stepData);
+    updateGraph(highlightNodes, highlightEdges, lambdaObj, false);
   };
 
-
-
-  // Gestion sommets
+  // ===== Gestion sommets =====
   const handleNodeLabelChange = (id, newLabel) => {
     setNodes(nodes.map(n => n.id === id ? { ...n, id: newLabel } : n));
     setEdges(edges.map(e => ({
@@ -157,10 +175,12 @@ export default function GraphAppMinimale() {
       target: e.target === id ? newLabel : e.target,
     })));
   };
+
   const deleteNode = (id) => {
     setNodes(nodes.filter(n => n.id !== id));
     setEdges(edges.filter(e => e.source !== id && e.target !== id));
   };
+
   const addNode = () => {
     if (!nodeId.trim()) return;
     if (nodes.some(n => n.id === nodeId.trim())) {
@@ -171,13 +191,15 @@ export default function GraphAppMinimale() {
     setNodeId('');
   };
 
-  // Gestion arcs
+  // ===== Gestion arcs =====
   const handleEdgeChange = (eid, field, value) => {
     setEdges(edges.map(e => e.id === eid ? { ...e, [field]: value } : e));
   };
+
   const deleteEdge = (eid) => {
     setEdges(edges.filter(e => e.id !== eid));
   };
+
   const addEdge = () => {
     if (!source.trim() || !target.trim()) return;
     if (edges.some(e => e.source === source.trim() && e.target === target.trim())) {
@@ -193,7 +215,7 @@ export default function GraphAppMinimale() {
     setWeight('');
   };
 
-  // Calcul MIN
+  // ===== Calcul MIN (rapide) =====
   const saveAndRunDantzigMin = async () => {
     if (nodes.length === 0 || edges.length === 0) {
       alert('Ajoute des sommets et arcs avant.');
@@ -205,18 +227,24 @@ export default function GraphAppMinimale() {
       const end = nodes[nodes.length - 1].id;
       const lambdaRes = await axios.get(`http://localhost:5000/dantzig-min/${start}`);
       const pathRes = await axios.get(`http://localhost:5000/shortest-path/${start}/${end}`);
+
       setLambdaData(lambdaRes.data);
       setPath(pathRes.data.chemin);
       setError('');
       setShowStepByStep(false);
-      updateGraph([], pathRes.data.chemin.map((v, i, arr) => arr.slice(i, i + 2)).filter(p => p.length === 2), lambdaRes.data.lambda, pathRes.data.chemin);
+
+      // Surligner le chemin court
+      const pairs = (pathRes.data.chemin || [])
+        .map((v, i, arr) => arr.slice(i, i + 2))
+        .filter(p => p.length === 2);
+      updateGraph([], pairs, lambdaRes.data.lambda || {}, true);
     } catch (err) {
       console.error(err);
       setError("Erreur dans l'algorithme ou le backend.");
     }
   };
 
-  // Calcul étape par étape
+  // ===== Calcul MIN Step-by-Step =====
   const runStepByStepCalculation = async () => {
     if (nodes.length === 0 || edges.length === 0) {
       alert('Ajoute des sommets et arcs avant.');
@@ -226,18 +254,33 @@ export default function GraphAppMinimale() {
       await axios.post('http://localhost:5000/save-graph', { nodes, edges });
       const start = nodes[0].id;
       const stepsRes = await axios.get(`http://localhost:5000/dantzig-min-detailed/${start}`);
-      setStepsData(stepsRes.data);
+
+      const steps = getStepsArray(stepsRes.data);
+      if (!steps.length) {
+        throw new Error("Aucune étape reçue du backend (ni 'steps' ni 'detailed_steps').");
+      }
+
+      const normalized = { ...stepsRes.data, steps };
+      setStepsData(normalized);
+      setCurrentStepData(steps[0]);
       setShowStepByStep(true);
       setError('');
-      if (stepsRes.data.detailed_steps && stepsRes.data.detailed_steps.length > 0) {
-        handleStepChange(stepsRes.data.detailed_steps[0]);
-      }
+
+      drawGraphWithStepData(steps[0]);
     } catch (err) {
       console.error(err);
       setError("Erreur dans l'algorithme étape par étape.");
     }
   };
 
+  // ===== Changement d'étape (par index, aligné avec Max) =====
+  const handleStepChange = (stepIndex) => {
+    const steps = getStepsArray(stepsData);
+    if (!steps || stepIndex < 0 || stepIndex >= steps.length) return;
+    const s = steps[stepIndex];
+    setCurrentStepData(s);
+    drawGraphWithStepData(s);
+  };
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-10 bg-gradient-to-b from-gray-50 to-white rounded-xl shadow-lg">
@@ -249,7 +292,11 @@ export default function GraphAppMinimale() {
         <section className="bg-white rounded-xl border p-6">
           <h2 className="mb-4 font-semibold">Ajouter un sommet</h2>
           <div className="flex gap-2 mb-4">
-            <input type="text" placeholder="Nom" value={nodeId} onChange={e => setNodeId(e.target.value)}
+            <input
+              type="text"
+              placeholder="Nom"
+              value={nodeId}
+              onChange={e => setNodeId(e.target.value)}
               className="border rounded-lg px-3 py-2 flex-grow" />
             <button onClick={addNode} className="bg-blue-600 text-white rounded-lg px-4 py-2">Ajouter</button>
           </div>
@@ -262,6 +309,9 @@ export default function GraphAppMinimale() {
                   <td><button onClick={() => deleteNode(n.id)} className="text-red-500">Supprimer</button></td>
                 </tr>
               ))}
+              {nodes.length === 0 && (
+                <tr><td colSpan="2" className="text-center py-4 text-gray-400 italic">Aucun sommet ajouté</td></tr>
+              )}
             </tbody>
           </table>
         </section>
@@ -289,6 +339,7 @@ export default function GraphAppMinimale() {
               className="border rounded-lg px-3 py-2 w-24" />
           </div>
           <button onClick={addEdge} className="bg-blue-600 text-white rounded-lg px-4 py-2">Ajouter</button>
+
           <table className="w-full border-collapse mt-4">
             <thead><tr><th>Source</th><th>Cible</th><th>Poids</th><th>Actions</th></tr></thead>
             <tbody>
@@ -300,6 +351,9 @@ export default function GraphAppMinimale() {
                   <td><button onClick={() => deleteEdge(e.id)} className="text-red-500">Supprimer</button></td>
                 </tr>
               ))}
+              {edges.length === 0 && (
+                <tr><td colSpan="4" className="text-center py-4 text-gray-400 italic">Aucun arc ajouté</td></tr>
+              )}
             </tbody>
           </table>
         </section>
@@ -307,20 +361,18 @@ export default function GraphAppMinimale() {
 
       {/* Boutons calcul */}
       <div className="flex justify-center gap-4">
-        <div className="flex justify-center gap-4">
-          <button onClick={saveAndRunDantzigMin} className="bg-green-600 hover:bg-green-700 text-white rounded-lg px-8 py-3 transition-colors">
-            Calcul Rapide
-          </button>
-          <button onClick={runStepByStepCalculation} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-8 py-3 transition-colors">
-            🎯 Calcul Étape par Étape
-          </button>
-          <button
-            onClick={() => cyRef.current?.fit(50)}
-            className="bg-gray-500 hover:bg-gray-600 text-white rounded-lg px-8 py-3 transition-colors"
-          >
-            📍 Centrer & Zoomer
-          </button>
-        </div>
+        <button onClick={saveAndRunDantzigMin} className="bg-green-600 hover:bg-green-700 text-white rounded-lg px-8 py-3 transition-colors">
+          Calcul Rapide
+        </button>
+        <button onClick={runStepByStepCalculation} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-8 py-3 transition-colors">
+          🎯 Calcul Étape par Étape
+        </button>
+        <button
+          onClick={() => cyRef.current?.fit(50)}
+          className="bg-gray-500 hover:bg-gray-600 text-white rounded-lg px-8 py-3 transition-colors"
+        >
+          📍 Centrer & Zoomer
+        </button>
       </div>
 
       {error && <div className="text-red-600">{error}</div>}
@@ -352,7 +404,18 @@ export default function GraphAppMinimale() {
       )}
 
       {showStepByStep && stepsData && (
-        <DantzigStepByStep stepsData={stepsData} onStepChange={handleStepChange} />
+        <DantzigStepByStep
+          stepsData={stepsData}
+          currentStepData={currentStepData}
+          onStepChange={handleStepChange}
+          onClose={() => {
+            setShowStepByStep(false);
+            setStepsData(null);
+            setCurrentStepData(null);
+            updateGraph([], [], {}, false);
+          }}
+          algorithmType="minimale"
+        />
       )}
     </div>
   );

@@ -22,7 +22,55 @@ export default function GraphAppMaximale() {
   const cyRef = useRef(null);
   const containerRef = useRef();
 
-  // ====== Gestion des sommets ======
+  // ===== Helpers =====
+  const parseArcString = (s) => {
+    // "(u, v)" -> ["u","v"]
+    if (!s || typeof s !== 'string') return null;
+    const m = s.match(/\(\s*([^,]+)\s*,\s*([^)]+)\s*\)/);
+    return m ? [m[1].trim(), m[2].trim()] : null;
+  };
+
+  const getStepsArray = (data) => {
+    if (!data) return [];
+    if (Array.isArray(data.steps)) return data.steps;
+    if (Array.isArray(data.detailed_steps)) return data.detailed_steps;
+    return [];
+  };
+
+  const getLambdaFromStep = (step) => step?.lambda ?? step?.lambda_values ?? {};
+
+  const getHighlightFromStep = (step) => {
+    let edgesPairs = [];
+    // 1) selected_arcs: ["(u, v)", ...]
+    if (Array.isArray(step?.selected_arcs)) {
+      edgesPairs = step.selected_arcs
+        .map(parseArcString)
+        .filter(Boolean);
+    }
+    // 2) selected: {from_node, to_node}
+    else if (step?.selected?.from_node && step?.selected?.to_node) {
+      edgesPairs = [[step.selected.from_node, step.selected.to_node]];
+    }
+    // 3) highlight_edges: [[u,v], ...]
+    else if (Array.isArray(step?.highlight_edges)) {
+      edgesPairs = step.highlight_edges
+        .filter(e => Array.isArray(e) && e.length === 2);
+    }
+
+    // Déduire les nœuds à surligner à partir des arêtes + highlight_nodes éventuels
+    const nodeSet = new Set();
+    edgesPairs.forEach(([u, v]) => { nodeSet.add(u); nodeSet.add(v); });
+    if (Array.isArray(step?.highlight_nodes)) {
+      step.highlight_nodes.forEach(n => nodeSet.add(n));
+    }
+
+    return {
+      highlightEdges: edgesPairs,
+      highlightNodes: Array.from(nodeSet),
+    };
+  };
+
+  // ===== Gestion des sommets =====
   const addNode = () => {
     const trimmed = nodeId.trim();
     if (!trimmed) return;
@@ -48,7 +96,7 @@ export default function GraphAppMaximale() {
     setEdges(edges.filter(e => e.source !== id && e.target !== id));
   };
 
-  // ====== Gestion des arcs ======
+  // ===== Gestion des arcs =====
   const addEdge = () => {
     if (!source || !target) return;
     if (edges.some(e => e.source === source && e.target === target)) {
@@ -73,7 +121,7 @@ export default function GraphAppMaximale() {
     setEdges(edges.filter(e => e.id !== eid));
   };
 
-  // ====== Calcul MAX ======
+  // ===== Calcul MAX (rapide) =====
   const saveAndRunDantzigMax = async () => {
     if (nodes.length === 0 || edges.length === 0) {
       alert('Ajoute des sommets et arcs avant.');
@@ -83,25 +131,23 @@ export default function GraphAppMaximale() {
       await axios.post('http://localhost:5000/save-graph', { nodes, edges });
       const start = nodes[0].id;
 
-      // Obtenir les valeurs lambda de tous les nœuds
       const lambdaRes = await axios.get(`http://localhost:5000/dantzig-max/${start}`);
-      
-      // Trouver le nœud avec la valeur lambda maximale (excluant le nœud de départ)
-      const lambdaValues = lambdaRes.data.lambda;
+
+      // Trouver le nœud avec la meilleure lambda (hors start)
+      const lambdaValues = lambdaRes.data.lambda || {};
       let bestNode = null;
       let maxLambda = -Infinity;
-      
+
       for (const node of nodes) {
         if (node.id !== start && lambdaValues[node.id] !== "-∞" && lambdaValues[node.id] !== undefined) {
           const lambdaValue = parseFloat(lambdaValues[node.id]);
-          if (lambdaValue > maxLambda) {
+          if (!Number.isNaN(lambdaValue) && lambdaValue > maxLambda) {
             maxLambda = lambdaValue;
             bestNode = node.id;
           }
         }
       }
-      
-      // Si on a trouvé un meilleur nœud, calculer le chemin vers ce nœud
+
       if (bestNode) {
         const pathRes = await axios.get(`http://localhost:5000/longest-path/${start}/${bestNode}`);
         setLambdaData(lambdaRes.data);
@@ -109,7 +155,6 @@ export default function GraphAppMaximale() {
         setError('');
         drawGraph(pathRes.data.chemin || []);
       } else {
-        // Aucun nœud accessible trouvé
         setLambdaData(lambdaRes.data);
         setPath([start]);
         setError('');
@@ -123,7 +168,7 @@ export default function GraphAppMaximale() {
     }
   };
 
-  // ====== Calcul MAX Step-by-Step ======
+  // ===== Calcul MAX Step-by-Step =====
   const runStepByStepCalculationMax = async () => {
     if (nodes.length === 0 || edges.length === 0) {
       alert('Ajoute des sommets et arcs avant.');
@@ -134,20 +179,26 @@ export default function GraphAppMaximale() {
       const start = nodes[0].id;
 
       const stepsRes = await axios.get(`http://localhost:5000/dantzig-max-detailed/${start}`);
-      setStepsData(stepsRes.data);
-      setCurrentStepData(stepsRes.data.steps[0]);
+      const steps = getStepsArray(stepsRes.data);
+
+      if (!steps.length) {
+        throw new Error("Aucune étape reçue du backend (ni 'steps' ni 'detailed_steps').");
+      }
+
+      const normalized = { ...stepsRes.data, steps };
+      setStepsData(normalized);
+      setCurrentStepData(steps[0]);
       setShowStepByStep(true);
       setError('');
-      
-      // Dessiner le graphe initial
-      drawGraphWithStepData(stepsRes.data.steps[0]);
+
+      drawGraphWithStepData(steps[0]);
     } catch (err) {
       console.error(err);
-      setError("Erreur dans l'algorithme détaillé ou le backend.");
+      setError("Erreur dans l'algorithme détaillé ou le backend (Step-by-Step).");
     }
   };
 
-  // ====== Dessin du graphe avec Cytoscape ======
+  // ===== Dessin du graphe =====
   const drawGraph = (highlightPath = []) => {
     const elements = [
       ...nodes.map(n => ({
@@ -233,50 +284,29 @@ export default function GraphAppMaximale() {
     });
   };
 
-  // ====== Dessin du graphe avec les données d'étapes (step-by-step) ======
+  // ===== Dessin du graphe avec données d'étape =====
   const drawGraphWithStepData = (stepData) => {
-    if (!stepData || !stepData.lambda) return;
-    
+    if (!stepData) return;
+
+    const lambdaObj = getLambdaFromStep(stepData);
+    const { highlightEdges, highlightNodes } = getHighlightFromStep(stepData);
+
     const elements = [
       ...nodes.map(n => {
-        const lambdaValue = stepData.lambda[n.id];
+        const lambdaValue = lambdaObj[n.id];
         const displayLabel = lambdaValue !== undefined ? `${n.id}\n(${lambdaValue})` : n.id;
-        
-        let nodeClass = '';
-        // Colorer les nœuds selon les arcs sélectionnés dans l'étape
-        if (stepData.selected_arcs) {
-          const isInSelectedArcs = stepData.selected_arcs.some(arc => 
-            arc.includes(n.id)
-          );
-          if (isInSelectedArcs) {
-            nodeClass = 'highlight-node';
-          }
-        }
-        
+        const isHighlighted = highlightNodes.includes(n.id);
         return {
           data: { id: n.id, label: displayLabel },
-          classes: nodeClass
+          classes: isHighlighted ? 'highlight-node' : ''
         };
       }),
       ...edges.map(e => {
-        let edgeClass = '';
-        // Colorer les arcs sélectionnés dans l'étape
-        if (stepData.selected_arcs) {
-          const arcString = `(${e.source}, ${e.target})`;
-          const isSelected = stepData.selected_arcs.includes(arcString);
-          if (isSelected) {
-            edgeClass = 'highlight-edge';
-          }
-        }
-        
+        // Vérifie si l'arête est dans les arêtes à surligner
+        const isSelected = highlightEdges.some(([u, v]) => u === e.source && v === e.target);
         return {
-          data: {
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            label: e.label
-          },
-          classes: edgeClass
+          data: { id: e.id, source: e.source, target: e.target, label: e.label },
+          classes: isSelected ? 'highlight-edge' : ''
         };
       })
     ];
@@ -344,15 +374,13 @@ export default function GraphAppMaximale() {
     });
   };
 
-  // ====== Gestion du changement d'étape (step-by-step) ======
+  // ===== Changement d'étape =====
   const handleStepChangeMax = (stepIndex) => {
-    if (!stepsData || !stepsData.steps || stepIndex < 0 || stepIndex >= stepsData.steps.length) {
-      return;
-    }
-    
-    const stepData = stepsData.steps[stepIndex];
-    setCurrentStepData(stepData);
-    drawGraphWithStepData(stepData);
+    const steps = getStepsArray(stepsData);
+    if (!steps || stepIndex < 0 || stepIndex >= steps.length) return;
+    const s = steps[stepIndex];
+    setCurrentStepData(s);
+    drawGraphWithStepData(s);
   };
 
   // 🔹 Mise à jour auto du graphe dès qu'un sommet ou un arc change
@@ -509,7 +537,7 @@ export default function GraphAppMaximale() {
       </div>
 
       {/* Boutons principaux */}
-      <div className="flex justify-center space-x-4">
+      <div className="flex justify-center flex-wrap gap-4">
         <button
           onClick={saveAndRunDantzigMax}
           className="bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg px-8 py-3"
@@ -521,6 +549,12 @@ export default function GraphAppMaximale() {
           className="bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg px-8 py-3"
         >
           Calcul étape par étape (Max)
+        </button>
+        <button
+          onClick={() => cyRef.current?.fit(50)}
+          className="bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg px-8 py-3"
+        >
+          📍 Centrer & Zoomer
         </button>
       </div>
 
@@ -536,18 +570,25 @@ export default function GraphAppMaximale() {
 
       {/* Composant Step-by-Step */}
       {showStepByStep && stepsData && (
-        <DantzigStepByStep
-          stepsData={stepsData}
-          currentStepData={currentStepData}
-          onStepChange={handleStepChangeMax}
-          onClose={() => {
-            setShowStepByStep(false);
-            setStepsData(null);
-            setCurrentStepData(null);
-            drawGraph();
-          }}
-          algorithmType="maximale"
-        />
+        <div className="relative">
+          <button
+            onClick={() => {
+              setShowStepByStep(false);
+              setStepsData(null);
+              drawGraph();
+            }}
+            className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg shadow"
+          >
+            ✖ Fermer
+          </button>
+          <DantzigStepByStep
+            stepsData={stepsData}
+            onStepChange={(step) => {
+              // step est déjà normalisé
+              drawGraphWithStepData(step._norm);
+            }}
+          />
+        </div>
       )}
 
       {/* Résultats */}
@@ -556,7 +597,7 @@ export default function GraphAppMaximale() {
           <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-sm">
             <h2 className="text-lg font-semibold mb-3">λ(x)</h2>
             <ul className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {Object.entries(lambdaData.lambda).map(([k, v]) => (
+              {Object.entries(lambdaData.lambda || {}).map(([k, v]) => (
                 <li key={k} className="bg-amber-50 rounded-lg px-4 py-3 border border-gray-200">
                   <span className="font-medium">{k}</span> : {v}
                 </li>
@@ -566,9 +607,9 @@ export default function GraphAppMaximale() {
           <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-sm">
             <h2 className="text-lg font-semibold mb-3">Étapes Ek</h2>
             <ul className="list-disc list-inside">
-              {Object.entries(lambdaData.E).map(([step, list]) => (
+              {Object.entries(lambdaData.E || {}).map(([step, list]) => (
                 <li key={step}>
-                  <strong>{step}</strong> : {list.join(', ')}
+                  <strong>{step}</strong> : {Array.isArray(list) ? list.join(', ') : String(list)}
                 </li>
               ))}
             </ul>
