@@ -1,42 +1,42 @@
 {
   "nodes": [
     {
-      "id": "O1"
+      "id": "x1"
     },
     {
-      "id": "O2"
+      "id": "x2"
     },
     {
-      "id": "O3"
+      "id": "x3"
     },
     {
-      "id": "O4"
+      "id": "x4"
     }
   ],
   "edges": [
     {
       "id": "e1",
-      "source": "O1",
-      "target": "O2",
-      "label": "10"
+      "source": "x1",
+      "target": "x2",
+      "label": "20"
     },
     {
       "id": "e2",
-      "source": "O2",
-      "target": "O3",
-      "label": "12"
+      "source": "x2",
+      "target": "x3",
+      "label": "20"
     },
     {
       "id": "e3",
-      "source": "O3",
-      "target": "O4",
-      "label": "9"
+      "source": "x3",
+      "target": "x4",
+      "label": "20"
     },
     {
       "id": "e4",
-      "source": "O1",
-      "target": "O4",
-      "label": "14"
+      "source": "x1",
+      "target": "x4",
+      "label": "20"
     }
   ]
 }
