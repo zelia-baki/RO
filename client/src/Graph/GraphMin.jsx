@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Network } from 'vis-network';
 import NavBar from '../Home/NavBar';
+import DantzigStepByStep from '../components/DantzigStepByStep';
 
 
 export default function GraphAppMinimale() {
@@ -13,8 +14,11 @@ export default function GraphAppMinimale() {
   const [target, setTarget] = useState('');
   const [weight, setWeight] = useState('');
   const [lambdaData, setLambdaData] = useState(null);
+  const [stepsData, setStepsData] = useState(null);
   const [path, setPath] = useState([]);
   const [error, setError] = useState('');
+  const [showStepByStep, setShowStepByStep] = useState(false);
+  const [currentStepData, setCurrentStepData] = useState(null);
 
   const networkRef = useRef(null);
   const containerRef = useRef();
@@ -79,10 +83,59 @@ export default function GraphAppMinimale() {
       setLambdaData(lambdaRes.data);
       setPath(pathRes.data.chemin);
       setError('');
+      setShowStepByStep(false); // Reset step-by-step mode
       drawGraph(pathRes.data.chemin);
     } catch (err) {
       console.error(err);
       setError("Erreur dans l'algorithme ou le backend.");
+    }
+  };
+
+  // Calcul MIN étape par étape
+  const runStepByStepCalculation = async () => {
+    if (nodes.length === 0 || edges.length === 0) {
+      alert('Ajoute des sommets et arcs avant.');
+      return;
+    }
+    try {
+      await axios.post('http://localhost:5000/save-graph', { nodes, edges });
+      const start = nodes[0].id;
+      const stepsRes = await axios.get(`http://localhost:5000/dantzig-min-detailed/${start}`);
+      setStepsData(stepsRes.data);
+      setShowStepByStep(true);
+      setError('');
+      
+      // Initialize with first step
+      if (stepsRes.data.detailed_steps && stepsRes.data.detailed_steps.length > 0) {
+        handleStepChange(stepsRes.data.detailed_steps[0]);
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Erreur dans l'algorithme étape par étape.");
+    }
+  };
+
+  // Gestion des changements d'étapes
+  const handleStepChange = (stepData) => {
+    setCurrentStepData(stepData);
+    
+    // Highlight nodes from current E set
+    const highlightNodes = stepData.highlight_nodes || stepData.E_current || [];
+    
+    // If there's a selected arc, highlight the path
+    let highlightEdges = stepData.highlight_edges || [];
+    if (stepData.selected) {
+      highlightEdges = [[stepData.selected.from_node, stepData.selected.to_node]];
+    }
+    
+    // Si c'est la dernière étape et qu'on a un chemin principal, l'afficher
+    const isLastStep = stepsData && stepData.step === stepsData.total_steps - 1;
+    if (isLastStep && stepsData.main_path) {
+      // Afficher le chemin minimal principal à la fin
+      drawGraphWithLambda(stepsData.main_path, [], stepData.lambda_values, stepsData.main_path);
+    } else {
+      // Draw graph with lambda values and highlighting
+      drawGraphWithLambda(highlightNodes, highlightEdges, stepData.lambda_values);
     }
   };
 
@@ -108,6 +161,85 @@ export default function GraphAppMinimale() {
       }))
     };
     const options = { nodes: { shape: 'circle', size: 28 }, edges: { smooth: true, arrows: 'to' } };
+    if (networkRef.current) networkRef.current.destroy();
+    networkRef.current = new Network(containerRef.current, data, options);
+  };
+
+  // Dessin avec valeurs lambda (pour mode step-by-step)
+  const drawGraphWithLambda = (highlightNodes = [], highlightEdges = [], lambdaValues = {}, pathToHighlight = null) => {
+    const data = {
+      nodes: nodes.map(n => {
+        const lambdaValue = lambdaValues[n.id];
+        const lambdaText = lambdaValue !== undefined ? `\nλ(${n.id}) = ${lambdaValue}` : '';
+        const isHighlighted = highlightNodes.includes(n.id);
+        
+        return {
+          id: n.id,
+          label: n.id + lambdaText,
+          color: {
+            background: isHighlighted ? '#dcfce7' : '#ffffff',
+            border: isHighlighted ? '#16a34a' : '#cbd5e1',
+            highlight: {
+              background: '#bbf7d0',
+              border: '#059669'
+            }
+          },
+          font: { 
+            color: isHighlighted ? '#15803d' : '#334155',
+            size: 12,
+            multi: true
+          },
+          borderWidth: isHighlighted ? 3 : 1,
+          size: 35
+        };
+      }),
+      edges: edges.map(e => {
+        const isHighlighted = highlightEdges.some(([from, to]) => 
+          (e.source === from && e.target === to) || 
+          (e.source === to && e.target === from)
+        );
+        
+        return {
+          from: e.source, 
+          to: e.target, 
+          label: e.label, 
+          arrows: 'to',
+          color: isHighlighted 
+            ? { color: '#dc2626', highlight: '#b91c1c' }
+            : '#94a3b8',
+          font: { 
+            color: isHighlighted ? '#dc2626' : '#475569',
+            size: 11
+          },
+          width: isHighlighted ? 4 : 1.5,
+          smooth: { enabled: true, type: 'cubicBezier' },
+        };
+      })
+    };
+    
+    const options = { 
+      nodes: { 
+        shape: 'circle', 
+        size: 35,
+        font: {
+          size: 12,
+          face: 'Arial'
+        }
+      }, 
+      edges: { 
+        smooth: true, 
+        arrows: 'to',
+        font: {
+          size: 11,
+          face: 'Arial'
+        }
+      },
+      physics: {
+        enabled: true,
+        stabilization: { iterations: 100 }
+      }
+    };
+    
     if (networkRef.current) networkRef.current.destroy();
     networkRef.current = new Network(containerRef.current, data, options);
   };
@@ -170,23 +302,63 @@ export default function GraphAppMinimale() {
         </section>
       </div>
 
-      <div className="flex justify-center">
-        <button onClick={saveAndRunDantzigMin} className="bg-green-600 text-white rounded-lg px-8 py-3">
-          Calculer Chemin Minimal
+      {/* Boutons de calcul */}
+      <div className="flex justify-center gap-4">
+        <button 
+          onClick={saveAndRunDantzigMin} 
+          className="bg-green-600 hover:bg-green-700 text-white rounded-lg px-8 py-3 transition-colors"
+        >
+          Calcul Rapide
+        </button>
+        <button 
+          onClick={runStepByStepCalculation} 
+          className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-8 py-3 transition-colors"
+        >
+          🎯 Calcul Étape par Étape
         </button>
       </div>
 
       {error && <div className="text-red-600">{error}</div>}
       <div ref={containerRef} style={{ width: '100%', height: '500px' }} />
 
-      {lambdaData && (
-        <div>
-          <h2>λ(x)</h2>
-          <ul>{Object.entries(lambdaData.lambda).map(([k, v]) => <li key={k}>{k} : {v}</li>)}</ul>
-          <h2>Étapes Ek</h2>
-          <ul>{Object.entries(lambdaData.E).map(([step, list]) => <li key={step}>{step} : {list.join(', ')}</li>)}</ul>
-          {path.length > 0 && <p>Chemin minimal : {path.join(' → ')}</p>}
+      {/* Résultats du calcul rapide */}
+      {!showStepByStep && lambdaData && (
+        <div className="bg-white border border-gray-200 p-6 rounded-xl shadow-sm">
+          <h2 className="text-xl font-bold mb-4">Résultats</h2>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <h3 className="font-semibold mb-2">λ(x)</h3>
+              <ul className="space-y-1">
+                {Object.entries(lambdaData.lambda).map(([k, v]) => (
+                  <li key={k} className="flex justify-between">
+                    <span>{k}:</span> <span className="font-medium">{v}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <h3 className="font-semibold mb-2">Étapes Ek</h3>
+              <ul className="space-y-1">
+                {Object.entries(lambdaData.E).map(([step, list]) => (
+                  <li key={step}>{step}: {list.join(', ')}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          {path.length > 0 && (
+            <div className="mt-4 p-3 bg-green-50 rounded-lg">
+              <strong>Chemin minimal:</strong> {path.join(' → ')}
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Composant step-by-step */}
+      {showStepByStep && stepsData && (
+        <DantzigStepByStep 
+          stepsData={stepsData} 
+          onStepChange={handleStepChange}
+        />
       )}
     </div>
   );

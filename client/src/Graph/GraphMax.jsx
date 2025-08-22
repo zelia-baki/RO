@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import cytoscape from 'cytoscape';
 import NavBar from '../Home/NavBar';
+import DantzigStepByStep from '../components/DantzigStepByStep';
 
 export default function GraphAppMaximale() {
   const [nodes, setNodes] = useState([]);
@@ -12,8 +13,11 @@ export default function GraphAppMaximale() {
   const [target, setTarget] = useState('');
   const [weight, setWeight] = useState('');
   const [lambdaData, setLambdaData] = useState(null);
+  const [stepsData, setStepsData] = useState(null);
   const [path, setPath] = useState([]);
   const [error, setError] = useState('');
+  const [showStepByStep, setShowStepByStep] = useState(false);
+  const [currentStepData, setCurrentStepData] = useState(null);
 
   const cyRef = useRef(null);
   const containerRef = useRef();
@@ -78,20 +82,68 @@ export default function GraphAppMaximale() {
     try {
       await axios.post('http://localhost:5000/save-graph', { nodes, edges });
       const start = nodes[0].id;
-      const end = nodes[nodes.length - 1].id;
 
+      // Obtenir les valeurs lambda de tous les nœuds
       const lambdaRes = await axios.get(`http://localhost:5000/dantzig-max/${start}`);
-      const pathRes = await axios.get(`http://localhost:5000/longest-path/${start}/${end}`);
-
-      setLambdaData(lambdaRes.data);
-      setPath(pathRes.data.chemin || []);
-      setError('');
-      drawGraph(pathRes.data.chemin || []);
+      
+      // Trouver le nœud avec la valeur lambda maximale (excluant le nœud de départ)
+      const lambdaValues = lambdaRes.data.lambda;
+      let bestNode = null;
+      let maxLambda = -Infinity;
+      
+      for (const node of nodes) {
+        if (node.id !== start && lambdaValues[node.id] !== "-∞" && lambdaValues[node.id] !== undefined) {
+          const lambdaValue = parseFloat(lambdaValues[node.id]);
+          if (lambdaValue > maxLambda) {
+            maxLambda = lambdaValue;
+            bestNode = node.id;
+          }
+        }
+      }
+      
+      // Si on a trouvé un meilleur nœud, calculer le chemin vers ce nœud
+      if (bestNode) {
+        const pathRes = await axios.get(`http://localhost:5000/longest-path/${start}/${bestNode}`);
+        setLambdaData(lambdaRes.data);
+        setPath(pathRes.data.chemin || []);
+        setError('');
+        drawGraph(pathRes.data.chemin || []);
+      } else {
+        // Aucun nœud accessible trouvé
+        setLambdaData(lambdaRes.data);
+        setPath([start]);
+        setError('');
+        drawGraph([start]);
+      }
     } catch (err) {
       console.error(err);
       setLambdaData(null);
       setPath([]);
       setError("Erreur dans l'algorithme ou le backend.");
+    }
+  };
+
+  // ====== Calcul MAX Step-by-Step ======
+  const runStepByStepCalculationMax = async () => {
+    if (nodes.length === 0 || edges.length === 0) {
+      alert('Ajoute des sommets et arcs avant.');
+      return;
+    }
+    try {
+      await axios.post('http://localhost:5000/save-graph', { nodes, edges });
+      const start = nodes[0].id;
+
+      const stepsRes = await axios.get(`http://localhost:5000/dantzig-max-detailed/${start}`);
+      setStepsData(stepsRes.data);
+      setCurrentStepData(stepsRes.data.steps[0]);
+      setShowStepByStep(true);
+      setError('');
+      
+      // Dessiner le graphe initial
+      drawGraphWithStepData(stepsRes.data.steps[0]);
+    } catch (err) {
+      console.error(err);
+      setError("Erreur dans l'algorithme détaillé ou le backend.");
     }
   };
 
@@ -179,6 +231,128 @@ export default function GraphAppMaximale() {
       ],
       layout: { name: 'cose', animate: true }
     });
+  };
+
+  // ====== Dessin du graphe avec les données d'étapes (step-by-step) ======
+  const drawGraphWithStepData = (stepData) => {
+    if (!stepData || !stepData.lambda) return;
+    
+    const elements = [
+      ...nodes.map(n => {
+        const lambdaValue = stepData.lambda[n.id];
+        const displayLabel = lambdaValue !== undefined ? `${n.id}\n(${lambdaValue})` : n.id;
+        
+        let nodeClass = '';
+        // Colorer les nœuds selon les arcs sélectionnés dans l'étape
+        if (stepData.selected_arcs) {
+          const isInSelectedArcs = stepData.selected_arcs.some(arc => 
+            arc.includes(n.id)
+          );
+          if (isInSelectedArcs) {
+            nodeClass = 'highlight-node';
+          }
+        }
+        
+        return {
+          data: { id: n.id, label: displayLabel },
+          classes: nodeClass
+        };
+      }),
+      ...edges.map(e => {
+        let edgeClass = '';
+        // Colorer les arcs sélectionnés dans l'étape
+        if (stepData.selected_arcs) {
+          const arcString = `(${e.source}, ${e.target})`;
+          const isSelected = stepData.selected_arcs.includes(arcString);
+          if (isSelected) {
+            edgeClass = 'highlight-edge';
+          }
+        }
+        
+        return {
+          data: {
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            label: e.label
+          },
+          classes: edgeClass
+        };
+      })
+    ];
+
+    if (cyRef.current) {
+      cyRef.current.destroy();
+    }
+
+    cyRef.current = cytoscape({
+      container: containerRef.current,
+      elements,
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'background-color': '#ffffff',
+            'border-width': 1,
+            'border-color': '#cbd5e1',
+            'label': 'data(label)',
+            'font-size': '12px',
+            'text-valign': 'center',
+            'color': '#334155',
+            'width': 40,
+            'height': 40,
+            'text-wrap': 'wrap',
+            'text-max-width': 50
+          }
+        },
+        {
+          selector: 'edge',
+          style: {
+            'curve-style': 'bezier',
+            'target-arrow-shape': 'triangle',
+            'target-arrow-color': '#94a3b8',
+            'line-color': '#94a3b8',
+            'width': 1.5,
+            'label': 'data(label)',
+            'font-size': '12px',
+            'color': '#475569',
+            'text-background-color': '#ffffff',
+            'text-background-opacity': 1,
+            'text-background-padding': 2
+          }
+        },
+        {
+          selector: '.highlight-node',
+          style: {
+            'background-color': '#fffbeb',
+            'border-color': '#d97706',
+            'border-width': 3,
+            'color': '#78350f'
+          }
+        },
+        {
+          selector: '.highlight-edge',
+          style: {
+            'line-color': '#d97706',
+            'target-arrow-color': '#b45309',
+            'width': 3,
+            'color': '#d97706'
+          }
+        }
+      ],
+      layout: { name: 'cose', animate: true }
+    });
+  };
+
+  // ====== Gestion du changement d'étape (step-by-step) ======
+  const handleStepChangeMax = (stepIndex) => {
+    if (!stepsData || !stepsData.steps || stepIndex < 0 || stepIndex >= stepsData.steps.length) {
+      return;
+    }
+    
+    const stepData = stepsData.steps[stepIndex];
+    setCurrentStepData(stepData);
+    drawGraphWithStepData(stepData);
   };
 
   // 🔹 Mise à jour auto du graphe dès qu'un sommet ou un arc change
@@ -334,13 +508,19 @@ export default function GraphAppMaximale() {
         </section>
       </div>
 
-      {/* Bouton principal */}
-      <div className="flex justify-center">
+      {/* Boutons principaux */}
+      <div className="flex justify-center space-x-4">
         <button
           onClick={saveAndRunDantzigMax}
           className="bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg px-8 py-3"
         >
-          Générer graphe & Calculer (Max)
+          Calcul rapide (Max)
+        </button>
+        <button
+          onClick={runStepByStepCalculationMax}
+          className="bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg px-8 py-3"
+        >
+          Calcul étape par étape (Max)
         </button>
       </div>
 
@@ -354,8 +534,24 @@ export default function GraphAppMaximale() {
         style={{ width: '100%', height: '500px', backgroundColor: '#ffffff' }}
       />
 
+      {/* Composant Step-by-Step */}
+      {showStepByStep && stepsData && (
+        <DantzigStepByStep
+          stepsData={stepsData}
+          currentStepData={currentStepData}
+          onStepChange={handleStepChangeMax}
+          onClose={() => {
+            setShowStepByStep(false);
+            setStepsData(null);
+            setCurrentStepData(null);
+            drawGraph();
+          }}
+          algorithmType="maximale"
+        />
+      )}
+
       {/* Résultats */}
-      {lambdaData && (
+      {lambdaData && !showStepByStep && (
         <section className="mt-8 space-y-6">
           <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-sm">
             <h2 className="text-lg font-semibold mb-3">λ(x)</h2>
