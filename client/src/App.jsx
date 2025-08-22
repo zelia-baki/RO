@@ -6,6 +6,8 @@ import HomePage from './Home/HomePage';
 import GraphApp from './Graph/GraphApp';
 import GraphAppMaximale from './Graph/GraphMax';
 import GraphAppMinimale from './Graph/GraphMin';
+// import GraphAppMinimale from './Graph/GraphAppMinimale';
+
 import TestTailwind from './TestTailwind';
 import PetriRunway from './PetriRunway'; // 🔹 ajout
 import "./index.css"
