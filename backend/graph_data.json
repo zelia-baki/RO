@@ -18,13 +18,13 @@
       "id": "e1",
       "source": "x1",
       "target": "x2",
-      "label": "20"
+      "label": "10"
     },
     {
       "id": "e2",
       "source": "x2",
       "target": "x3",
-      "label": "10"
+      "label": "15"
     },
     {
       "id": "e3",
@@ -36,7 +36,7 @@
       "id": "e4",
       "source": "x1",
       "target": "x4",
-      "label": "10"
+      "label": "50"
     }
   ]
 }

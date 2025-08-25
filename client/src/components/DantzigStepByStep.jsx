@@ -75,14 +75,22 @@ const DantzigStepByStep = ({ stepsData, onStepChange }) => {
   }, [isPlaying, steps.length]);
 
   // notify parent
-  useEffect(() => {
-    if (!steps.length) return;
-    const raw = steps[currentStep];
-    if (!raw) return;
-    const norm = normalizeStep(raw);
-    // on envoie la version enrichie (contient les champs originaux + normés sous _norm)
-    onStepChange?.({ ...raw, _norm: norm });
-  }, [currentStep, steps, onStepChange]);
+useEffect(() => {
+  if (!steps.length) return;
+  const raw = steps[currentStep];
+  if (!raw) return;
+  const norm = normalizeStep(raw);
+
+  const payload = { ...raw, _norm: norm };
+
+  // 🔹 Si on est à la dernière étape et qu'il y a un chemin final
+  if (currentStep === steps.length - 1 && stepsData?.main_path) {
+    payload._finalPath = stepsData.main_path;
+  }
+
+  onStepChange?.(payload);
+}, [currentStep, steps, onStepChange, stepsData]);
+
 
   if (!stepsData || steps.length === 0) {
     return null;

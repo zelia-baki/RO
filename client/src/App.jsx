@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 // Pages
 import HomePage from './Home/HomePage';
-import GraphApp from './Graph/GraphApp';
 import GraphAppMaximale from './Graph/GraphMax';
 import GraphAppMinimale from './Graph/GraphMin';
 // import GraphAppMinimale from './Graph/GraphAppMinimale';
