@@ -156,7 +156,7 @@ export default function GraphAppBase({ mode }) {
 
 
     return (
-        <div className="p-8 max-w-7xl mx-auto space-y-10 font-sans text-gray-800 bg-gradient-to-b from-yellow-50 to-white rounded-xl shadow-lg">
+        <div className="p-8 space-y-10 font-sans text-gray-800 bg-gradient-to-b from-yellow-50 to-white rounded-xl shadow-lg">
             <NavBar />
             <h1 className="text-4xl font-extrabold text-center text-gray-900 tracking-tight">
                 Algorithme de Dantzig —{" "}

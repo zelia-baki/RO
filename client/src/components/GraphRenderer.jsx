@@ -39,7 +39,7 @@ export default function GraphRenderer({
                         "border-width": 1,
                         label: "data(label)",
                         "text-valign": "center",
-                        "font-size": "14px",
+                        "font-size": "10px",
                     },
                 },
                 {

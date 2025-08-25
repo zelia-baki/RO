@@ -5,10 +5,9 @@ import sys, os
 # Ajouter chemins vers les modules
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'algorithms'))
-
-from graph_manager import save_graph_data, load_graph_data, convert_to_dantzig_format
-from dantMin import init_dantzig_min, init_dantzig_min_detailed, get_shortest_path, format_lambda_results as format_lambda_min
-from dantMax import init_dantzig_max, init_dantzig_max_detailed, get_longest_path, format_lambda_results as format_lambda_max
+from .utils.graph_manager import save_graph_data, load_graph_data, convert_to_dantzig_format
+from .algorithms.dantMin import init_dantzig_min, init_dantzig_min_detailed, get_shortest_path, format_lambda_results as format_lambda_min
+from .algorithms.dantMax import init_dantzig_max, init_dantzig_max_detailed, get_longest_path, format_lambda_results as format_lambda_max
 
 app = Flask(__name__)
 CORS(app)
